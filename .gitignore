@@ -39,3 +39,39 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# Private keys and certificates
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Dependencies and build output
+node_modules/
+.next/
+out/
+dist/
+build/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Local database files and backups
+*.sql
+*.sql.gz
+*.dump
+*.bak
+
+# Local editor and OS files
+.DS_Store
+Thumbs.db
+
+cookies.txt

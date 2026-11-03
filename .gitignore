@@ -65,8 +65,12 @@ build/
 npm-debug.log*
 
 # Local database files and backups
-*.sql
-*.sql.gz
+# *.sql
+!database/*.sql
+!secrets_monitor_schema.sql
+# *.sql
+!database/*.sql
+!secrets_monitor_schema.sql.gz
 *.dump
 *.bak
 

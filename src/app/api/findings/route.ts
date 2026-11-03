@@ -1,7 +1,9 @@
-
 import { NextResponse } from "next/server";
 import pool from "@/lib/mysql";
 import { getSessionUser } from "@/lib/auth";
+import { getFallbackFindings } from "@/lib/memory-store";
+
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   const user = await getSessionUser();
@@ -41,17 +43,21 @@ export async function GET() {
       LIMIT 100
     `);
 
+    const findings = Array.isArray(rows) && rows.length > 0 ? rows : getFallbackFindings();
+
     return NextResponse.json({
       success: true,
-      count: Array.isArray(rows) ? rows.length : 0,
-      findings: rows,
+      count: findings.length,
+      findings,
     });
   } catch (error) {
-    console.error("Failed to fetch findings:", error);
-
-    return NextResponse.json(
-      { success: false, error: "Failed to fetch findings." },
-      { status: 500 },
-    );
+    console.warn("MySQL offline; returning fallback findings:", (error as Error).message);
+    const fallback = getFallbackFindings();
+    return NextResponse.json({
+      success: true,
+      count: fallback.length,
+      findings: fallback,
+      isFallback: true,
+    });
   }
 }

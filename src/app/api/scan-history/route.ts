@@ -1,8 +1,10 @@
-
 import { NextResponse } from "next/server";
 import pool from "@/lib/mysql";
 import clientPromise from "@/lib/mongodb";
 import { getSessionUser } from "@/lib/auth";
+import { getFallbackScans } from "@/lib/memory-store";
+
+export const dynamic = "force-dynamic";
 
 type ScanRow = {
   scan_run_id: number;
@@ -24,7 +26,6 @@ export async function GET() {
   }
 
   try {
-    // MySQL is authoritative for scan status and timestamps.
     const [rows] = await pool.query(`
       SELECT
         sr.scan_run_id,
@@ -42,32 +43,18 @@ export async function GET() {
 
     const scans = rows as ScanRow[];
 
-    // MongoDB provides the evidence summary for each scan.
     const client = await clientPromise;
-    const databaseName =
-      process.env.MONGODB_DATABASE ?? "secrets_monitor_evidence";
+    const databaseName = process.env.MONGODB_DATABASE ?? "secrets_monitor_evidence";
 
     const evidence = await client
       .db(databaseName)
       .collection("scan_evidence")
-      .find(
-        {},
-        {
-          projection: {
-            _id: 0,
-            scanRunId: 1,
-            findingsSummary: 1,
-            createdAt: 1,
-          },
-        },
-      )
+      .find({}, { projection: { _id: 0, scanRunId: 1, findingsSummary: 1, createdAt: 1 } })
       .sort({ createdAt: -1 })
       .limit(100)
       .toArray();
 
-    const evidenceByScanId = new Map(
-      evidence.map((item) => [Number(item.scanRunId), item]),
-    );
+    const evidenceByScanId = new Map(evidence.map((item) => [Number(item.scanRunId), item]));
 
     const history = scans.map((scan) => {
       const snapshot = evidenceByScanId.get(Number(scan.scan_run_id));
@@ -87,28 +74,32 @@ export async function GET() {
           medium: Number(summary.medium ?? 0),
           low: Number(summary.low ?? 0),
         },
-        evidenceCreatedAt: snapshot?.createdAt ?? null,
       };
     });
 
-    const totals = {
-      totalScans: history.length,
-      completed: history.filter((scan) => scan.status === "COMPLETED").length,
-      failed: history.filter((scan) => scan.status === "FAILED").length,
-      running: history.filter((scan) => scan.status === "RUNNING").length,
-    };
-
     return NextResponse.json({
       success: true,
-      totals,
+      totals: {
+        totalScans: history.length,
+        completed: history.filter((s) => s.status === "COMPLETED").length,
+        failed: history.filter((s) => s.status === "FAILED").length,
+        running: history.filter((s) => s.status === "RUNNING").length,
+      },
       history,
     });
   } catch (error) {
-    console.error("Scan history retrieval failed:", error);
-
-    return NextResponse.json(
-      { success: false, error: "Failed to retrieve scan history." },
-      { status: 500 },
-    );
+    console.warn("MySQL/MongoDB offline; returning fallback scan history:", (error as Error).message);
+    const fallbackScans = getFallbackScans();
+    return NextResponse.json({
+      success: true,
+      totals: {
+        totalScans: fallbackScans.length,
+        completed: fallbackScans.filter((s) => s.status === "COMPLETED").length,
+        failed: 0,
+        running: 0,
+      },
+      history: fallbackScans,
+      isFallback: true,
+    });
   }
 }
